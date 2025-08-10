@@ -5,87 +5,160 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Snake</title>
 <style>
-  :root {
-    --bg: #000;
-    --board: #111;
-    --snakeHead: #7CFC00;  /* lawn green */
-    --snakeBody: #22aa22;
-    --food: #e53935;
-    --border: #fff;
-    --text: #fff;
-  }
-  html, body {
-    height: 100%;
-  }
   body {
     margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: #000;
+    color: #fff;
+    font-family: Arial, Helvetica, sans-serif;
     display: flex;
     align-items: center;
     justify-content: center;
+    min-height: 100vh;
   }
-  .wrap {
-    text-align: center;
-  }
+  .wrap { text-align: center; }
   canvas {
-    background: var(--board);
-    border: 4px solid var(--border); /* visible border */
+    background: #111;
+    border: 4px solid #fff; /* visible border */
     display: block;
-    margin: 0 auto 12px;
-    box-sizing: content-box;
+    margin: 0 auto 10px;
   }
-  .hud {
-    display: flex;
-    gap: 16px;
-    justify-content: center;
-    align-items: baseline;
-    font-size: 14px;
-    opacity: 0.9;
-    margin-bottom: 6px;
-  }
-  .hud .big {
-    font-size: 18px;
-    font-weight: 700;
-    opacity: 1;
-  }
-  .hint {
-    font-size: 12px;
-    opacity: 0.7;
-  }
-  /* Game over overlay */
-  .overlay {
-    position: absolute;
-    inset: 0;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0,0,0,0.55);
-  }
-  .overlay.show { display: flex; }
-  .card {
-    padding: 14px 18px;
-    background: rgba(0,0,0,0.75);
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 10px;
-    box-shadow: 0 6px 24px rgba(0,0,0,0.35);
-  }
-  .card h2 {
-    margin: 0 0 6px;
-    font-size: 18px;
-  }
-  .card p {
-    margin: 4px 0 0;
-    font-size: 13px;
-    opacity: 0.85;
-  }
-  .stage {
-    position: relative;
-    width: max-content;
-    margin: 0 auto;
-  }
+  .hud { margin-bottom: 8px; opacity: .9; }
+  .hint { font-size: 12px; opacity: .75; }
 </style>
 </head>
 <body>
-  <div class="w
+<div class="wrap">
+  <div class="hud">
+    Score: <span id="score">0</span> &nbsp;|&nbsp; Best: <span id="best">0</span>
+  </div>
+  <canvas id="game" width="480" height="480" aria-label="Snake board"></canvas>
+  <div class="hint">Use Arrow Keys or WASD. Press R to restart.</div>
+</div>
+
+<script>
+// --- ultra-conservative, Qualtrics/GitHub-safe JS (no optional chaining etc.) ---
+(function () {
+  var canvas = document.getElementById('game');
+  var ctx = canvas.getContext('2d');
+  var scoreEl = document.getElementById('score');
+  var bestEl  = document.getElementById('best');
+
+  // grid
+  var cell = 20, cols = canvas.width / cell | 0, rows = canvas.height / cell | 0;
+
+  // state
+  var snake, dir, nextDir, food, score, best = 0, loopId, dead;
+
+  function reset() {
+    snake = [{x: (cols/2|0)*cell, y: (rows/2|0)*cell}];
+    dir = null;
+    nextDir = null;
+    score = 0;
+    dead = false;
+    scoreEl.textContent = score;
+    if (bestEl.textContent === "") bestEl.textContent = "0";
+    placeFood();
+    if (loopId) clearInterval(loopId);
+    loopId = setInterval(tick, 100); // speed
+    draw(); // initial paint
+  }
+
+  function placeFood() {
+    var ok = false, fx, fy, i;
+    while (!ok) {
+      fx = (Math.random() * cols | 0) * cell;
+      fy = (Math.random() * rows | 0) * cell;
+      ok = true;
+      for (i = 0; i < snake.length; i++) {
+        if (snake[i].x === fx && snake[i].y === fy) { ok = false; break; }
+      }
+    }
+    food = {x: fx, y: fy};
+  }
+
+  function draw() {
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // food
+    ctx.fillStyle = '#e53935';
+    ctx.fillRect(food.x, food.y, cell, cell);
+
+    // snake
+    for (var i = 0; i < snake.length; i++) {
+      ctx.fillStyle = (i === 0) ? '#7CFC00' : '#22aa22';
+      ctx.fillRect(snake[i].x, snake[i].y, cell, cell);
+    }
+  }
+
+  function collide(head, arr) {
+    for (var i = 0; i < arr.length; i++) {
+      if (head.x === arr[i].x && head.y === arr[i].y) return true;
+    }
+    return false;
+  }
+
+  function gameOver() {
+    if (dead) return;
+    dead = true;
+    clearInterval(loopId);
+    // quick auto-restart
+    setTimeout(reset, 1000);
+  }
+
+  function tick() {
+    // update direction once/frame
+    if (nextDir) { dir = nextDir; nextDir = null; }
+
+    // if no direction yet, do nothing (still draws)
+    if (!dir) { draw(); return; }
+
+    var hx = snake[0].x, hy = snake[0].y;
+    if (dir === 'L') hx -= cell;
+    if (dir === 'U') hy -= cell;
+    if (dir === 'R') hx += cell;
+    if (dir === 'D') hy += cell;
+
+    // walls/self
+    if (hx < 0 || hx >= canvas.width || hy < 0 || hy >= canvas.height || collide({x:hx,y:hy}, snake)) {
+      gameOver(); return;
+    }
+
+    // eat
+    if (hx === food.x && hy === food.y) {
+      score++;
+      scoreEl.textContent = score;
+      if (score > best) { best = score; bestEl.textContent = best; }
+      // grow by not popping
+      placeFood();
+    } else {
+      snake.pop();
+    }
+
+    snake.unshift({x:hx, y:hy});
+    draw();
+  }
+
+  // Input
+  document.addEventListener('keydown', function (e) {
+    var k = e.key;
+    // prevent scroll on common keys (helps when tested outside Qualtrics too)
+    if (('ArrowUp ArrowDown ArrowLeft ArrowRight w a s d W A S D ').indexOf(k) !== -1) {
+      if (e.preventDefault) e.preventDefault();
+    }
+    if ((k === 'ArrowLeft'  || k === 'a' || k === 'A') && dir !== 'R') nextDir = 'L';
+    else if ((k === 'ArrowUp'    || k === 'w' || k === 'W') && dir !== 'D') nextDir = 'U';
+    else if ((k === 'ArrowRight' || k === 'd' || k === 'D') && dir !== 'L') nextDir = 'R';
+    else if ((k === 'ArrowDown'  || k === 's' || k === 'S') && dir !== 'U') nextDir = 'D';
+    else if (k === 'r' || k === 'R') reset();
+  });
+
+  // Attract mode: if player doesn’t press a key in 10s, start moving right so it looks alive
+  setTimeout(function () { if (!dir) { nextDir = 'R'; } }, 10000);
+
+  // go
+  reset();
+})();
+</script>
+</body>
+</html>
